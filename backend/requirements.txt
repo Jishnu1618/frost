@@ -1,0 +1,8 @@
+fastapi[all]
+uvicorn
+opencv-python-headless
+ultralytics
+python-dotenv
+pydantic
+requests
+scikit-image
