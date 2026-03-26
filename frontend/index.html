@@ -60,7 +60,6 @@
             font-family: 'Inter', sans-serif;
             min-height: 100vh;
             cursor: none;
-            /* Hide default cursor */
         }
 
         .material-symbols-outlined {
@@ -83,13 +82,8 @@
         }
 
         @keyframes scan {
-            0% {
-                top: 0;
-            }
-
-            100% {
-                top: 100%;
-            }
+            0% { top: 0; }
+            100% { top: 100%; }
         }
 
         .status-pulse {
@@ -97,23 +91,9 @@
         }
 
         @keyframes pulse-blue {
-            0% {
-                opacity: 0.4;
-                transform: scale(0.9);
-                box-shadow: 0 0 0px #00E5FF;
-            }
-
-            50% {
-                opacity: 1;
-                transform: scale(1.1);
-                box-shadow: 0 0 10px #00E5FF;
-            }
-
-            100% {
-                opacity: 0.4;
-                transform: scale(0.9);
-                box-shadow: 0 0 0px #00E5FF;
-            }
+            0% { opacity: 0.4; transform: scale(0.9); box-shadow: 0 0 0px #00E5FF; }
+            50% { opacity: 1; transform: scale(1.1); box-shadow: 0 0 10px #00E5FF; }
+            100% { opacity: 0.4; transform: scale(0.9); box-shadow: 0 0 0px #00E5FF; }
         }
 
         .scrollbar-hide::-webkit-scrollbar {
@@ -126,6 +106,77 @@
 
         .text-glow {
             text-shadow: 0 0 15px rgba(0, 229, 255, 0.5);
+        }
+
+        /* Animated title glow */
+        @keyframes titleGlow {
+            0%, 100% { text-shadow: 0 0 20px rgba(0,229,255,0.4), 0 0 40px rgba(0,229,255,0.2), 0 0 80px rgba(0,229,255,0.1); }
+            50% { text-shadow: 0 0 30px rgba(0,229,255,0.8), 0 0 60px rgba(0,229,255,0.4), 0 0 120px rgba(0,229,255,0.2); }
+        }
+        .title-glow {
+            animation: titleGlow 3s ease-in-out infinite;
+        }
+
+        /* Floating particle */
+        @keyframes floatUp {
+            0% { transform: translateY(100vh) scale(0); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 0.5; }
+            100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+        }
+        .particle {
+            position: absolute;
+            width: 3px;
+            height: 3px;
+            background: #00E5FF;
+            border-radius: 50%;
+            pointer-events: none;
+            box-shadow: 0 0 6px #00E5FF;
+        }
+
+        /* Data table styles */
+        .data-table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        .data-table th {
+            padding: 12px 16px;
+            text-align: left;
+            font-size: 10px;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+            color: rgba(0, 229, 255, 0.6);
+            border-bottom: 1px solid rgba(0, 229, 255, 0.15);
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            background: rgba(6, 26, 58, 0.95);
+            backdrop-filter: blur(8px);
+            z-index: 5;
+        }
+        .data-table td {
+            padding: 10px 16px;
+            font-size: 12px;
+            border-bottom: 1px solid rgba(0, 229, 255, 0.05);
+            font-family: 'Inter', sans-serif;
+            color: #CBD5E1;
+            transition: background 0.2s;
+        }
+        .data-table tr:hover td {
+            background: rgba(0, 229, 255, 0.03);
+        }
+        .alert-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 2px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
         }
 
         /* Custom Pointer Styles */
@@ -158,7 +209,6 @@
             transition: width 0.2s, height 0.2s, background-color 0.2s;
         }
 
-        /* Hover state for cursor */
         button:hover~.cursor-outline,
         a:hover~.cursor-outline,
         .hover-target:hover~.cursor-outline {
@@ -196,6 +246,8 @@
             const [roomData, setRoomData] = useState([]);
             const [totalSaved, setTotalSaved] = useState(0);
             const [activeTab, setActiveTab] = useState('Overview');
+            const [historyData, setHistoryData] = useState([]);
+            const [showPreview, setShowPreview] = useState(false);
 
             useEffect(() => {
                 const fetchStatus = async () => {
@@ -214,6 +266,25 @@
                 const interval = setInterval(fetchStatus, 500);
                 return () => clearInterval(interval);
             }, []);
+
+            // Fetch history when Analytics tab is active
+            useEffect(() => {
+                if (activeTab !== 'Analytics') return;
+                const fetchHistory = async () => {
+                    try {
+                        const res = await fetch("http://127.0.0.1:8000/api/history");
+                        const data = await res.json();
+                        if (data.history) setHistoryData(data.history);
+                    } catch (e) { /* ignore */ }
+                };
+                fetchHistory();
+                const interval = setInterval(fetchHistory, 5000);
+                return () => clearInterval(interval);
+            }, [activeTab]);
+
+            const downloadCSV = () => {
+                window.open('http://127.0.0.1:8000/api/history/csv', '_blank');
+            };
 
             const liveRoom = roomData.length > 0 ? roomData[0] : { person_count: 0, appliance_state: "OFF", alert: false };
 
@@ -267,11 +338,34 @@
                             <div className="scanline z-20 opacity-30"></div>
                         </div>
 
-                        {/* Earth Phase 1 */}
-                        <motion.div style={{ scale: earthScale, x: earthX, opacity: earthOpacity }} className="absolute inset-0 flex items-center justify-center pointer-events-none z-10 origin-center">
+                        {/* Floating Particles */}
+                        <div className="absolute inset-0 z-[5] pointer-events-none overflow-hidden">
+                            {Array.from({length: 20}).map((_, i) => (
+                                <div key={i} className="particle" style={{
+                                    left: `${Math.random() * 100}%`,
+                                    animationName: 'floatUp',
+                                    animationDuration: `${6 + Math.random() * 8}s`,
+                                    animationDelay: `${Math.random() * 10}s`,
+                                    animationIterationCount: 'infinite',
+                                    animationTimingFunction: 'linear',
+                                    opacity: Math.random() * 0.5 + 0.2,
+                                    width: `${2 + Math.random() * 3}px`,
+                                    height: `${2 + Math.random() * 3}px`,
+                                }} />
+                            ))}
+                        </div>
+
+                        {/* Earth Phase 1 + Title */}
+                        <motion.div style={{ scale: earthScale, x: earthX, opacity: earthOpacity }} className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 origin-center">
+                            {/* WATT-WATCH Title Above Earth */}
+                            <div className="mb-8 text-center z-20 relative">
+                                <h1 className="text-6xl md:text-8xl font-headline font-black text-primary tracking-[0.3em] uppercase title-glow select-none" style={{letterSpacing: '0.3em'}}>WATT-WATCH</h1>
+                                <p className="text-lg md:text-xl font-label text-primary/50 tracking-[0.5em] uppercase mt-4">Intelligent Energy Auditor</p>
+                                <div className="mx-auto mt-6 w-48 h-[1px] bg-gradient-to-r from-transparent via-primary/50 to-transparent"></div>
+                            </div>
                             <motion.img
                                 animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 160, ease: "linear" }}
-                                src="./assets/earth.png" alt="Rotating Earth" className="w-[85vh] h-[85vh] max-w-none object-contain rounded-full shadow-[0_0_120px_rgba(0,229,255,0.25)]"
+                                src="./assets/earth.png" alt="Rotating Earth" className="w-[65vh] h-[65vh] max-w-none object-contain rounded-full shadow-[0_0_120px_rgba(0,229,255,0.25)]"
                             />
                         </motion.div>
 
@@ -362,14 +456,15 @@
                                                 </p>
                                             </div>
 
-                                            <div className="hover-target glass-panel p-8 shadow-[0_0_30px_rgba(0,0,0,0.5)] flex flex-col border-t-4 border-[#3B82F6]/50 transition-transform hover:-translate-y-2 duration-300">
+                                            <div className={`hover-target glass-panel p-8 shadow-[0_0_30px_rgba(0,0,0,0.5)] flex flex-col border-t-4 transition-transform hover:-translate-y-2 duration-300 ${liveRoom.appliance_count > 0 ? "border-[#F59E0B]" : "border-primary"}`}>
                                                 <div className="flex justify-between items-center mb-6">
-                                                    <p className="text-xs font-label text-[#3B82F6]/70 tracking-widest uppercase">Grid Stress</p>
-                                                    <span className="material-symbols-outlined text-3xl text-[#3B82F6] drop-shadow-[0_0_10px_#3B82F6]">speed</span>
+                                                    <p className="text-xs font-label text-[#F59E0B]/70 tracking-widest uppercase">Appliances Detected</p>
+                                                    <span className={`material-symbols-outlined text-3xl ${liveRoom.appliance_count > 0 ? "text-[#F59E0B] drop-shadow-[0_0_10px_#F59E0B]" : "text-primary text-glow"}`}>devices</span>
                                                 </div>
-                                                <p className="text-6xl font-headline text-[#3B82F6] font-black drop-shadow-[0_0_10px_#3B82F6] mt-auto">
-                                                    {liveRoom.alert ? "HIGH" : "LOW"}
+                                                <p className={`text-6xl font-headline font-black mt-auto ${liveRoom.appliance_count > 0 ? "text-[#F59E0B] drop-shadow-[0_0_10px_#F59E0B]" : "text-primary text-glow"}`}>
+                                                    {liveRoom.appliance_count || 0} <span className={`text-xl ${liveRoom.appliance_count > 0 ? "text-[#F59E0B]/70" : "text-primary/70"}`}>{liveRoom.appliance_state}</span>
                                                 </p>
+                                                <p className="text-[9px] font-label text-primary/40 mt-3 tracking-wider">LIGHTS · LAPTOPS · MONITORS · FANS</p>
                                             </div>
 
                                             {/* Alert Panel spanning all columns */}
@@ -445,25 +540,109 @@
                                             className="w-full flex-1"
                                         >
                                             <h2 className="text-3xl font-headline font-bold text-primary tracking-widest uppercase border-l-4 border-primary pl-4 text-glow mb-8">POWER GRID ANALYTICS</h2>
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                                <div className="hover-target md:col-span-2 glass-panel p-8 flex flex-col items-center justify-center min-h-[400px] transition-transform hover:-translate-y-2 duration-300">
-                                                    <span className="material-symbols-outlined text-8xl text-primary/20 mb-6 drop-shadow-[0_0_30px_#00E5FF]">insert_chart</span>
-                                                    <h3 className="text-2xl font-headline text-primary/60 tracking-widest uppercase">DATACENTER LINK STANDBY</h3>
-                                                    <p className="font-label text-primary/40 mt-4 text-center max-w-lg leading-loose">The historic data metrics visualizer is awaiting Chart.js or Recharts binding. Currently logging real-time variables to SQLite.</p>
+
+
+                                            {/* Action Buttons */}
+                                            <motion.div initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.5}} className="flex flex-wrap gap-4 mb-6">
+                                                <button onClick={downloadCSV} className="hover-target flex items-center gap-3 px-6 py-3 glass-panel border border-primary/30 font-label text-xs uppercase tracking-widest text-primary font-bold transition-all hover:bg-primary/10 hover:border-primary hover:shadow-[0_0_20px_rgba(0,229,255,0.2)] active:scale-95">
+                                                    <span className="material-symbols-outlined text-base">download</span>
+                                                    Download CSV
+                                                </button>
+                                                <button onClick={() => setShowPreview(!showPreview)} className={`hover-target flex items-center gap-3 px-6 py-3 glass-panel border font-label text-xs uppercase tracking-widest font-bold transition-all active:scale-95 ${showPreview ? 'border-primary text-background bg-primary shadow-[0_0_20px_rgba(0,229,255,0.3)]' : 'border-primary/30 text-primary hover:bg-primary/10 hover:border-primary'}`}>
+                                                    <span className="material-symbols-outlined text-base">{showPreview ? 'visibility_off' : 'visibility'}</span>
+                                                    {showPreview ? 'Hide Data' : 'Preview Data'}
+                                                </button>
+                                                <div className="ml-auto flex items-center gap-2 font-label text-[10px] text-primary/40 tracking-widest">
+                                                    <span className="w-2 h-2 rounded-full bg-primary status-pulse"></span>
+                                                    {historyData.length} RECORDS LOGGED
                                                 </div>
-                                                <div className="space-y-8 flex flex-col justify-center">
-                                                    <div className="hover-target glass-panel p-8 border-l-4 border-l-secondary/50 shadow-[0_0_30px_rgba(139,92,246,0.1)] transition-transform hover:translate-x-2 duration-300">
-                                                        <p className="text-[10px] font-label text-secondary/70 uppercase tracking-widest mb-2">Weekly Net Savings</p>
-                                                        <p className="text-5xl font-headline text-secondary font-bold text-glow">$1.42M</p>
-                                                        <p className="text-[10px] font-label text-primary/80 mt-4 flex items-center gap-1"><span className="material-symbols-outlined text-sm">trending_up</span> 12.4% vs Previous Cycle</p>
+                                            </motion.div>
+
+                                            {/* Data Table */}
+                                            <AnimatePresence>
+                                            {showPreview && (
+                                                <motion.div
+                                                    initial={{opacity:0, height:0}}
+                                                    animate={{opacity:1, height:'auto'}}
+                                                    exit={{opacity:0, height:0}}
+                                                    transition={{duration:0.4, type:'spring', bounce:0.1}}
+                                                    className="glass-panel overflow-hidden shadow-[0_0_40px_rgba(0,0,0,0.4)]"
+                                                >
+                                                    <div className="max-h-[450px] overflow-y-auto scrollbar-hide">
+                                                        <table className="data-table">
+                                                            <thead>
+                                                                <tr>
+                                                                    <th>Timestamp</th>
+                                                                    <th>Room</th>
+                                                                    <th>Occupancy</th>
+                                                                    <th>Appliances</th>
+                                                                    <th>Alert</th>
+                                                                    <th>Saved (kWh)</th>
+                                                                    <th>Brightness</th>
+                                                                    <th>Motion</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody>
+                                                                {historyData.slice().reverse().map((row, i) => (
+                                                                    <motion.tr
+                                                                        key={i}
+                                                                        initial={{opacity:0, x:-20}}
+                                                                        animate={{opacity:1, x:0}}
+                                                                        transition={{delay: Math.min(i * 0.03, 0.5)}}
+                                                                    >
+                                                                        <td className="text-primary/70 font-mono text-[11px]">{row.timestamp}</td>
+                                                                        <td className="font-semibold">{row.room}</td>
+                                                                        <td>
+                                                                            <span className="flex items-center gap-1">
+                                                                                <span className="material-symbols-outlined text-sm text-primary/60">group</span>
+                                                                                {row.person_count}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td>
+                                                                            <span className={`alert-badge ${row.appliance_state === 'ON' ? 'bg-error/20 text-error' : 'bg-primary/10 text-primary/60'}`}>
+                                                                                {row.appliance_state}
+                                                                            </span>
+                                                                        </td>
+                                                                        <td>
+                                                                            {row.alert ? (
+                                                                                <span className="alert-badge bg-error/20 text-error"><span className="material-symbols-outlined text-xs">warning</span> ALERT</span>
+                                                                            ) : (
+                                                                                <span className="alert-badge bg-primary/10 text-primary/40">OK</span>
+                                                                            )}
+                                                                        </td>
+                                                                        <td className="text-secondary font-mono">{row.energy_saved_kwh}</td>
+                                                                        <td className="text-primary/50 font-mono text-[11px]">{row.brightness}</td>
+                                                                        <td className="text-primary/50 font-mono text-[11px]">{row.motion_level}</td>
+                                                                    </motion.tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
                                                     </div>
-                                                    <div className="hover-target glass-panel p-8 border-l-4 border-l-primary/50 shadow-[0_0_30px_rgba(0,229,255,0.1)] transition-transform hover:translate-x-2 duration-300">
-                                                        <p className="text-[10px] font-label text-primary/70 uppercase tracking-widest mb-2">Carbon Offset (CO2)</p>
-                                                        <p className="text-5xl font-headline text-primary font-bold text-glow">2.8k <span className="text-xl opacity-50 font-normal">tons</span></p>
-                                                        <div className="w-full h-1 bg-surface-variant mt-6 overflow-hidden"><motion.div initial={{ width: 0 }} animate={{ width: "85%" }} transition={{ duration: 1, delay: 0.5 }} className="h-full bg-primary shadow-[0_0_10px_#00E5FF]"></motion.div></div>
-                                                    </div>
+                                                </motion.div>
+                                            )}
+                                            </AnimatePresence>
+
+                                            {/* Summary Cards Below */}
+                                            {!showPreview && (
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
+                                                    <motion.div initial={{opacity:0,x:-30}} animate={{opacity:1,x:0}} transition={{delay:0.3}} className="hover-target glass-panel p-8 border-l-4 border-l-secondary/50 shadow-[0_0_30px_rgba(139,92,246,0.1)] transition-transform hover:translate-x-2 duration-300">
+                                                        <div className="flex items-center justify-between mb-4">
+                                                            <p className="text-[10px] font-label text-secondary/70 uppercase tracking-widest">Phantom Load Events Today</p>
+                                                            <span className="material-symbols-outlined text-2xl text-secondary/50">electric_bolt</span>
+                                                        </div>
+                                                        <p className="text-5xl font-headline text-secondary font-bold">{historyData.filter(r => r.alert).length}</p>
+                                                        <p className="text-[10px] font-label text-primary/60 mt-4">Rooms caught with devices on while empty</p>
+                                                    </motion.div>
+                                                    <motion.div initial={{opacity:0,x:30}} animate={{opacity:1,x:0}} transition={{delay:0.4}} className="hover-target glass-panel p-8 border-l-4 border-l-primary/50 shadow-[0_0_30px_rgba(0,229,255,0.1)] transition-transform hover:translate-x-2 duration-300">
+                                                        <div className="flex items-center justify-between mb-4">
+                                                            <p className="text-[10px] font-label text-primary/70 uppercase tracking-widest">Data Points Collected</p>
+                                                            <span className="material-symbols-outlined text-2xl text-primary/50">database</span>
+                                                        </div>
+                                                        <p className="text-5xl font-headline text-primary font-bold text-glow">{historyData.length}</p>
+                                                        <p className="text-[10px] font-label text-primary/60 mt-4">Click "Preview Data" to inspect all records</p>
+                                                    </motion.div>
                                                 </div>
-                                            </div>
+                                            )}
                                         </motion.div>
                                     )}
 
