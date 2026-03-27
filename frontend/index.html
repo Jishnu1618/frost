@@ -85,8 +85,13 @@
         }
 
         @keyframes scan {
-            0% { top: 0; }
-            100% { top: 100%; }
+            0% {
+                top: 0;
+            }
+
+            100% {
+                top: 100%;
+            }
         }
 
         .status-pulse {
@@ -94,9 +99,23 @@
         }
 
         @keyframes pulse-blue {
-            0% { opacity: 0.4; transform: scale(0.9); box-shadow: 0 0 0px #00E5FF; }
-            50% { opacity: 1; transform: scale(1.1); box-shadow: 0 0 10px #00E5FF; }
-            100% { opacity: 0.4; transform: scale(0.9); box-shadow: 0 0 0px #00E5FF; }
+            0% {
+                opacity: 0.4;
+                transform: scale(0.9);
+                box-shadow: 0 0 0px #00E5FF;
+            }
+
+            50% {
+                opacity: 1;
+                transform: scale(1.1);
+                box-shadow: 0 0 10px #00E5FF;
+            }
+
+            100% {
+                opacity: 0.4;
+                transform: scale(0.9);
+                box-shadow: 0 0 0px #00E5FF;
+            }
         }
 
         .scrollbar-hide::-webkit-scrollbar {
@@ -113,20 +132,42 @@
 
         /* Animated title glow */
         @keyframes titleGlow {
-            0%, 100% { text-shadow: 0 0 20px rgba(0,229,255,0.4), 0 0 40px rgba(0,229,255,0.2), 0 0 80px rgba(0,229,255,0.1); }
-            50% { text-shadow: 0 0 30px rgba(0,229,255,0.8), 0 0 60px rgba(0,229,255,0.4), 0 0 120px rgba(0,229,255,0.2); }
+
+            0%,
+            100% {
+                text-shadow: 0 0 20px rgba(0, 229, 255, 0.4), 0 0 40px rgba(0, 229, 255, 0.2), 0 0 80px rgba(0, 229, 255, 0.1);
+            }
+
+            50% {
+                text-shadow: 0 0 30px rgba(0, 229, 255, 0.8), 0 0 60px rgba(0, 229, 255, 0.4), 0 0 120px rgba(0, 229, 255, 0.2);
+            }
         }
+
         .title-glow {
             animation: titleGlow 3s ease-in-out infinite;
         }
 
         /* Floating particle */
         @keyframes floatUp {
-            0% { transform: translateY(100vh) scale(0); opacity: 0; }
-            10% { opacity: 1; }
-            90% { opacity: 0.5; }
-            100% { transform: translateY(-10vh) scale(1); opacity: 0; }
+            0% {
+                transform: translateY(100vh) scale(0);
+                opacity: 0;
+            }
+
+            10% {
+                opacity: 1;
+            }
+
+            90% {
+                opacity: 0.5;
+            }
+
+            100% {
+                transform: translateY(-10vh) scale(1);
+                opacity: 0;
+            }
         }
+
         .particle {
             position: absolute;
             width: 3px;
@@ -143,6 +184,7 @@
             border-collapse: separate;
             border-spacing: 0;
         }
+
         .data-table th {
             padding: 12px 16px;
             text-align: left;
@@ -159,6 +201,7 @@
             backdrop-filter: blur(8px);
             z-index: 5;
         }
+
         .data-table td {
             padding: 10px 16px;
             font-size: 12px;
@@ -167,9 +210,11 @@
             color: #CBD5E1;
             transition: background 0.2s;
         }
+
         .data-table tr:hover td {
             background: rgba(0, 229, 255, 0.03);
         }
+
         .alert-badge {
             display: inline-flex;
             align-items: center;
@@ -257,6 +302,8 @@
             const [activeTab, setActiveTab] = useState('Overview');
             const [historyData, setHistoryData] = useState([]);
             const [showPreview, setShowPreview] = useState(false);
+            const [selectedRoomIndex, setSelectedRoomIndex] = useState(0);
+            const [isRecording, setIsRecording] = useState(false);
 
             useEffect(() => {
                 const fetchStatus = async () => {
@@ -291,11 +338,32 @@
                 return () => clearInterval(interval);
             }, [activeTab]);
 
+            useEffect(() => {
+                const fetchRecordingStatus = async () => {
+                    try {
+                        const res = await fetch(`http://127.0.0.1:8000/api/recording_status/${selectedRoomIndex}`);
+                        const data = await res.json();
+                        setIsRecording(data.is_recording);
+                    } catch (e) { /* ignore */ }
+                };
+                fetchRecordingStatus();
+                const interval = setInterval(fetchRecordingStatus, 1000);
+                return () => clearInterval(interval);
+            }, [selectedRoomIndex]);
+
+            const startRecording = async () => {
+                if (isRecording) return;
+                try {
+                    await fetch(`http://127.0.0.1:8000/api/record_video/${selectedRoomIndex}`, { method: 'POST' });
+                    setIsRecording(true);
+                } catch (e) { }
+            };
+
             const downloadCSV = () => {
                 window.open('http://127.0.0.1:8000/api/history/csv', '_blank');
             };
 
-            const liveRoom = roomData.length > 0 ? roomData[0] : { person_count: 0, appliance_state: "OFF", alert: false };
+            const liveRoom = roomData.length > 0 && roomData[selectedRoomIndex] ? roomData[selectedRoomIndex] : { person_count: 0, appliance_state: "OFF", alert: false, appliance_count: 0, energy_saved_kwh: 0.0 };
 
             // Chart Rendering Logic
             useEffect(() => {
@@ -310,7 +378,7 @@
                 destroyCharts();
 
                 // Sort chronological for charts
-                const sortedData = [...historyData].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+                const sortedData = [...historyData].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
                 let cumulative = 0;
                 const labels = [];
@@ -469,7 +537,7 @@
 
                         {/* Floating Particles */}
                         <div className="absolute inset-0 z-[5] pointer-events-none overflow-hidden">
-                            {Array.from({length: 20}).map((_, i) => (
+                            {Array.from({ length: 20 }).map((_, i) => (
                                 <div key={i} className="particle" style={{
                                     left: `${Math.random() * 100}%`,
                                     animationName: 'floatUp',
@@ -488,7 +556,7 @@
                         <motion.div style={{ scale: earthScale, x: earthX, opacity: earthOpacity }} className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none z-10 origin-center">
                             {/* WATT-WATCH Title Above Earth */}
                             <div className="mb-8 text-center z-20 relative">
-                                <h1 className="text-6xl md:text-8xl font-headline font-black text-primary tracking-[0.3em] uppercase title-glow select-none" style={{letterSpacing: '0.3em'}}>WATT-WATCH</h1>
+                                <h1 className="text-6xl md:text-8xl font-headline font-black text-primary tracking-[0.3em] uppercase title-glow select-none" style={{ letterSpacing: '0.3em' }}>WATT-WATCH</h1>
                                 <p className="text-lg md:text-xl font-label text-primary/50 tracking-[0.5em] uppercase mt-4">Intelligent Energy Auditor</p>
                                 <div className="mx-auto mt-6 w-48 h-[1px] bg-gradient-to-r from-transparent via-primary/50 to-transparent"></div>
                             </div>
@@ -633,7 +701,28 @@
                                             className="w-full h-full flex flex-col gap-6"
                                         >
                                             <div className="flex items-center justify-between mb-4">
-                                                <h2 className="text-3xl font-headline font-bold text-primary tracking-widest uppercase border-l-4 border-primary pl-4 text-glow">LIVE VIDEO FEED</h2>
+                                                <div className="flex items-center gap-4">
+                                                    <h2 className="text-3xl font-headline font-bold text-primary tracking-widest uppercase border-l-4 border-primary pl-4 text-glow">LIVE VIDEO FEED</h2>
+                                                    <div className="glass-panel flex rounded px-2 py-1 gap-1 ml-4 shadow-[0_0_15px_rgba(0,0,0,0.5)]">
+                                                        {[0, 1, 2].map(idx => (
+                                                            <button
+                                                                key={idx}
+                                                                onClick={() => setSelectedRoomIndex(idx)}
+                                                                className={`px-4 py-1.5 font-label text-xs uppercase font-bold tracking-widest rounded transition-all ${selectedRoomIndex === idx ? 'bg-primary text-background shadow-[0_0_10px_#00E5FF]' : 'text-primary/50 hover:text-primary'}`}
+                                                            >
+                                                                ROOM 10{idx + 1}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+
+                                                <button
+                                                    onClick={startRecording}
+                                                    className={`hover-target flex items-center gap-2 px-4 py-2 font-label text-xs uppercase tracking-widest font-bold border transition-colors ${isRecording ? 'border-error text-error bg-error/10 animate-pulse' : 'border-error/50 text-error hover:bg-error/20'}`}
+                                                >
+                                                    <span className="material-symbols-outlined text-sm">{isRecording ? 'stop_circle' : 'radio_button_checked'}</span>
+                                                    {isRecording ? 'Recording (Auto-Stop on Empty)' : 'Record Video'}
+                                                </button>
                                             </div>
                                             <div className="hover-target glass-panel relative w-full aspect-video overflow-hidden shadow-[0_0_50px_rgba(0,0,0,0.5)] border border-primary/30 transition-transform duration-500 hover:scale-[1.01] hover:border-primary">
                                                 <div className="absolute top-6 left-6 z-10 flex items-center gap-3 bg-background/80 backdrop-blur-md px-4 py-2 border border-primary/20 rounded shadow-[0_0_20px_rgba(0,0,0,0.8)]">
@@ -642,7 +731,8 @@
                                                 </div>
                                                 <div className="scanline z-20 opacity-30"></div>
                                                 <img
-                                                    src="http://127.0.0.1:8000/api/video_feed"
+                                                    key={selectedRoomIndex}
+                                                    src={`http://127.0.0.1:8000/api/video_feed/${selectedRoomIndex}`}
                                                     alt="Live CCTV Stream"
                                                     className="w-full h-full object-cover mix-blend-screen opacity-90 filter contrast-125 hover:scale-105 transition-transform duration-1000"
                                                     onError={(e) => {
@@ -672,7 +762,7 @@
 
 
                                             {/* Action Buttons */}
-                                            <motion.div initial={{opacity:0}} animate={{opacity:1}} transition={{delay:0.5}} className="flex flex-wrap gap-4 mb-6">
+                                            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.5 }} className="flex flex-wrap gap-4 mb-6">
                                                 <button onClick={downloadCSV} className="hover-target flex items-center gap-3 px-6 py-3 glass-panel border border-primary/30 font-label text-xs uppercase tracking-widest text-primary font-bold transition-all hover:bg-primary/10 hover:border-primary hover:shadow-[0_0_20px_rgba(0,229,255,0.2)] active:scale-95">
                                                     <span className="material-symbols-outlined text-base">download</span>
                                                     Download CSV
@@ -689,79 +779,79 @@
 
                                             {/* Data Table */}
                                             <AnimatePresence>
-                                            {showPreview && (
-                                                <motion.div
-                                                    initial={{opacity:0, height:0}}
-                                                    animate={{opacity:1, height:'auto'}}
-                                                    exit={{opacity:0, height:0}}
-                                                    transition={{duration:0.4, type:'spring', bounce:0.1}}
-                                                    className="glass-panel overflow-hidden shadow-[0_0_40px_rgba(0,0,0,0.4)]"
-                                                >
-                                                    <div className="max-h-[450px] overflow-y-auto scrollbar-hide">
-                                                        <table className="data-table">
-                                                            <thead>
-                                                                <tr>
-                                                                    <th>Timestamp</th>
-                                                                    <th>Room</th>
-                                                                    <th>Occupancy</th>
-                                                                    <th>Appliances</th>
-                                                                    <th>Alert</th>
-                                                                    <th>Saved (kWh)</th>
-                                                                    <th>Brightness</th>
-                                                                    <th>Motion</th>
-                                                                </tr>
-                                                            </thead>
-                                                            <tbody>
-                                                                {historyData.slice().reverse().map((row, i) => (
-                                                                    <motion.tr
-                                                                        key={i}
-                                                                        initial={{opacity:0, x:-20}}
-                                                                        animate={{opacity:1, x:0}}
-                                                                        transition={{delay: Math.min(i * 0.03, 0.5)}}
-                                                                    >
-                                                                        <td className="text-primary/70 font-mono text-[11px]">{row.timestamp}</td>
-                                                                        <td className="font-semibold">{row.room}</td>
-                                                                        <td>
-                                                                            <span className="flex items-center gap-1">
-                                                                                <span className="material-symbols-outlined text-sm text-primary/60">group</span>
-                                                                                {row.person_count}
-                                                                            </span>
-                                                                        </td>
-                                                                        <td>
-                                                                            <span className={`alert-badge ${row.appliance_state === 'ON' ? 'bg-error/20 text-error' : 'bg-primary/10 text-primary/60'}`}>
-                                                                                {row.appliance_state}
-                                                                            </span>
-                                                                        </td>
-                                                                        <td>
-                                                                            {row.alert ? (
-                                                                                <span className="alert-badge bg-error/20 text-error"><span className="material-symbols-outlined text-xs">warning</span> ALERT</span>
-                                                                            ) : (
-                                                                                <span className="alert-badge bg-primary/10 text-primary/40">OK</span>
-                                                                            )}
-                                                                        </td>
-                                                                        <td className="text-secondary font-mono">{row.energy_saved_kwh}</td>
-                                                                        <td className="text-primary/50 font-mono text-[11px]">{row.brightness}</td>
-                                                                        <td className="text-primary/50 font-mono text-[11px]">{row.motion_level}</td>
-                                                                    </motion.tr>
-                                                                ))}
-                                                            </tbody>
-                                                        </table>
-                                                    </div>
-                                                </motion.div>
-                                            )}
+                                                {showPreview && (
+                                                    <motion.div
+                                                        initial={{ opacity: 0, height: 0 }}
+                                                        animate={{ opacity: 1, height: 'auto' }}
+                                                        exit={{ opacity: 0, height: 0 }}
+                                                        transition={{ duration: 0.4, type: 'spring', bounce: 0.1 }}
+                                                        className="glass-panel overflow-hidden shadow-[0_0_40px_rgba(0,0,0,0.4)]"
+                                                    >
+                                                        <div className="max-h-[450px] overflow-y-auto scrollbar-hide">
+                                                            <table className="data-table">
+                                                                <thead>
+                                                                    <tr>
+                                                                        <th>Timestamp</th>
+                                                                        <th>Room</th>
+                                                                        <th>Occupancy</th>
+                                                                        <th>Appliances</th>
+                                                                        <th>Alert</th>
+                                                                        <th>Saved (kWh)</th>
+                                                                        <th>Brightness</th>
+                                                                        <th>Motion</th>
+                                                                    </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                    {historyData.slice().reverse().map((row, i) => (
+                                                                        <motion.tr
+                                                                            key={i}
+                                                                            initial={{ opacity: 0, x: -20 }}
+                                                                            animate={{ opacity: 1, x: 0 }}
+                                                                            transition={{ delay: Math.min(i * 0.03, 0.5) }}
+                                                                        >
+                                                                            <td className="text-primary/70 font-mono text-[11px]">{row.timestamp}</td>
+                                                                            <td className="font-semibold">{row.room}</td>
+                                                                            <td>
+                                                                                <span className="flex items-center gap-1">
+                                                                                    <span className="material-symbols-outlined text-sm text-primary/60">group</span>
+                                                                                    {row.person_count}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td>
+                                                                                <span className={`alert-badge ${row.appliance_state === 'ON' ? 'bg-error/20 text-error' : 'bg-primary/10 text-primary/60'}`}>
+                                                                                    {row.appliance_state}
+                                                                                </span>
+                                                                            </td>
+                                                                            <td>
+                                                                                {row.alert ? (
+                                                                                    <span className="alert-badge bg-error/20 text-error"><span className="material-symbols-outlined text-xs">warning</span> ALERT</span>
+                                                                                ) : (
+                                                                                    <span className="alert-badge bg-primary/10 text-primary/40">OK</span>
+                                                                                )}
+                                                                            </td>
+                                                                            <td className="text-secondary font-mono">{row.energy_saved_kwh}</td>
+                                                                            <td className="text-primary/50 font-mono text-[11px]">{row.brightness}</td>
+                                                                            <td className="text-primary/50 font-mono text-[11px]">{row.motion_level}</td>
+                                                                        </motion.tr>
+                                                                    ))}
+                                                                </tbody>
+                                                            </table>
+                                                        </div>
+                                                    </motion.div>
+                                                )}
                                             </AnimatePresence>
 
                                             {/* Data Visualization Dashboard */}
                                             {!showPreview && (
                                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
-                                                    <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{delay:0.3}} className="hover-target glass-panel p-4 h-[320px] border-t-2 border-primary shadow-[0_0_20px_rgba(0,229,255,0.1)] col-span-1 lg:col-span-2 relative">
+                                                    <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }} className="hover-target glass-panel p-4 h-[320px] border-t-2 border-primary shadow-[0_0_20px_rgba(0,229,255,0.1)] col-span-1 lg:col-span-2 relative">
                                                         <canvas ref={lineChartRef}></canvas>
                                                     </motion.div>
                                                     <div className="flex flex-col gap-6 col-span-1 border-t-2 border-outline/50 pl-0 lg:pl-4">
-                                                        <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{delay:0.4}} className="hover-target glass-panel p-4 h-[220px] shadow-[0_0_20px_rgba(244,63,94,0.1)] border-b-2 border-error/50">
+                                                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }} className="hover-target glass-panel p-4 h-[220px] shadow-[0_0_20px_rgba(244,63,94,0.1)] border-b-2 border-error/50">
                                                             <canvas ref={barChartRef}></canvas>
                                                         </motion.div>
-                                                        <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{delay:0.5}} className="hover-target glass-panel p-4 flex-1 min-h-[220px] shadow-[0_0_20px_rgba(0,229,255,0.05)] border-b-2 border-secondary/50">
+                                                        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }} className="hover-target glass-panel p-4 flex-1 min-h-[220px] shadow-[0_0_20px_rgba(0,229,255,0.05)] border-b-2 border-secondary/50">
                                                             <canvas ref={doughnutChartRef}></canvas>
                                                         </motion.div>
                                                     </div>

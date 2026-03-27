@@ -17,8 +17,15 @@ from app.utils.privacy import apply_ghost_mode
 # --- GLOBAL STATE ---
 # We store the latest processed CV results in memory so the API can serve it instantly.
 # We include one LIVE room hooked up to your camera, and two MOCK rooms for dashboard aesthetics.
-global_frame = None
-camera_status = {"connected": False, "message": "Initializing..."}
+global_frames = {0: None, 1: None, 2: None}
+camera_status = {0: {"connected": False, "message": "Initializing..."},
+                 1: {"connected": False, "message": "Initializing..."},
+                 2: {"connected": False, "message": "Initializing..."}}
+recording_states = {
+    0: {"is_recording": False, "writer": None, "empty_timer": None},
+    1: {"is_recording": False, "writer": None, "empty_timer": None},
+    2: {"is_recording": False, "writer": None, "empty_timer": None}
+}
 history_log = []  # Stores timestamped snapshots of room state
 MAX_HISTORY = 500  # Keep last 500 entries
 
@@ -77,46 +84,40 @@ def generate_status_frame(message="NO CAMERA", sub_message="Waiting for video so
     return frame
 
 
-def vision_processing_loop():
+def vision_processing_loop(room_index, video_source):
     """
-    This function runs continuously in the background parsing the camera.
+    This function runs continuously in the background parsing the camera or video file.
     """
-    global global_frame, camera_status
-    print("[BACKGROUND] Starting Vision Processing Thread...")
+    global global_frames, camera_status, recording_states
+    print(f"[BACKGROUND] Starting Vision Processing Thread for Room {room_index}...")
     
     try:
         detector = OccupancyDetector()
         appliance_detector = ApplianceDetector()
     except Exception as e:
         print("[WARNING] CV Models failed to initialize:", e)
-        camera_status = {"connected": False, "message": f"Model init failed: {e}"}
-        # Keep generating status frames so the video feed endpoint has something to show
+        camera_status[room_index] = {"connected": False, "message": f"Model init failed: {e}"}
         while True:
-            global_frame = generate_status_frame("MODEL ERROR", str(e)[:50])
+            global_frames[room_index] = generate_status_frame("MODEL ERROR", str(e)[:50])
             time.sleep(1)
         return
         
-    video_source = 1  # Secondary webcam
-    
-    # Use DirectShow on Windows to prevent MSMF crash spam
-    if os.name == 'nt':
+    if isinstance(video_source, int) and os.name == 'nt':
         cap = cv2.VideoCapture(video_source, cv2.CAP_DSHOW)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     else:
         cap = cv2.VideoCapture(video_source)
     
-    # Minimize camera buffer to avoid stale frames (huge latency reducer)
-    cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-    
     if not cap.isOpened():
-        print("[WARNING] Live Camera could not be opened. Generating fallback frames.")
-        camera_status = {"connected": False, "message": "Camera not available"}
+        print(f"[WARNING] Video source {video_source} could not be opened.")
+        camera_status[room_index] = {"connected": False, "message": "Camera/Video not available"}
         while True:
-            global_frame = generate_status_frame("NO CAMERA", "Connect a webcam and restart the server")
+            global_frames[room_index] = generate_status_frame("NO CAMERA", f"Source {video_source} failed")
             time.sleep(1)
         return
     
-    camera_status = {"connected": True, "message": "Live camera active"}
-    print("[BACKGROUND] Camera opened successfully. Starting optimized inference loop.")
+    camera_status[room_index] = {"connected": True, "message": "Video active"}
+    print(f"[BACKGROUND] Source {video_source} opened successfully for Room {room_index}.")
         
     empty_start_time = None
     ALERT_DELAY_SECONDS = 5
@@ -137,17 +138,22 @@ def vision_processing_loop():
     while True:
         ret, frame = cap.read()
         if not ret:
-            failed_frames += 1
-            if failed_frames > 15:
-                print("[ERROR] Camera stream completely lost. Switching to fallback.")
-                camera_status = {"connected": False, "message": "Camera stream lost"}
-                cap.release()
-                while True:
-                    global_frame = generate_status_frame("SIGNAL LOST", "Camera disconnected")
-                    time.sleep(1)
-                return
-            time.sleep(0.1)
-            continue
+            if isinstance(video_source, str):
+                # Loop the video file back to the start
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
+            else:
+                failed_frames += 1
+                if failed_frames > 15:
+                    print(f"[ERROR] Camera stream {room_index} lost.")
+                    camera_status[room_index] = {"connected": False, "message": "Camera stream lost"}
+                    cap.release()
+                    while True:
+                        global_frames[room_index] = generate_status_frame("SIGNAL LOST", "Camera disconnected")
+                        time.sleep(1)
+                    return
+                time.sleep(0.1)
+                continue
             
         failed_frames = 0
         frame_idx += 1
@@ -177,7 +183,7 @@ def vision_processing_loop():
         cv2.putText(annotated, status_text, (10, 60),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 229, 255), 1, cv2.LINE_AA)
         
-        global_frame = annotated
+        global_frames[room_index] = annotated
         
         appliances_active = cached_light_on or cached_fan_running
         appliance_status_str = "ON" if appliances_active else "OFF"
@@ -193,29 +199,32 @@ def vision_processing_loop():
         else:
             empty_start_time = None
             
-        # 3. Update the Global State for Room 101
-        ROOMS_STATE[0]["person_count"] = person_count
-        ROOMS_STATE[0]["appliance_state"] = appliance_status_str
-        ROOMS_STATE[0]["appliance_count"] = appliance_count
-        ROOMS_STATE[0]["alert"] = alert
+        # 3. Update the Global State
+        ROOMS_STATE[room_index]["person_count"] = person_count
+        ROOMS_STATE[room_index]["appliance_state"] = appliance_status_str
+        ROOMS_STATE[room_index]["appliance_count"] = appliance_count
+        ROOMS_STATE[room_index]["alert"] = alert
         
         # Simulate savings
         if alert:
-            ROOMS_STATE[0]["energy_saved_kwh"] += 0.005
-        
-        # Log history snapshot every ~3 seconds (every 100th frame at 30ms interval)
+            ROOMS_STATE[room_index]["energy_saved_kwh"] += 0.005
+            
+        # Logging
         if not hasattr(vision_processing_loop, '_frame_counter'):
-            vision_processing_loop._frame_counter = 0
-        vision_processing_loop._frame_counter += 1
+            vision_processing_loop._frame_counter = {}
+        if room_index not in vision_processing_loop._frame_counter:
+            vision_processing_loop._frame_counter[room_index] = 0
+            
+        vision_processing_loop._frame_counter[room_index] += 1
         
-        if vision_processing_loop._frame_counter % 100 == 0:
+        if vision_processing_loop._frame_counter[room_index] % 100 == 0:
             snapshot = {
                 "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                "room": ROOMS_STATE[0]["id"],
+                "room": ROOMS_STATE[room_index]["id"],
                 "person_count": person_count,
                 "appliance_state": appliance_status_str,
                 "alert": alert,
-                "energy_saved_kwh": round(ROOMS_STATE[0]["energy_saved_kwh"], 4),
+                "energy_saved_kwh": round(ROOMS_STATE[room_index]["energy_saved_kwh"], 4),
                 "brightness": round(float(cached_brightness), 1),
                 "motion_level": int(cached_motion)
             }
@@ -223,13 +232,41 @@ def vision_processing_loop():
                 try:
                     history_collection.insert_one(snapshot.copy())
                 except Exception as e:
-                    print(f"[ERROR] Failed to insert snapshot into DB: {e}")
+                    pass
 
             history_log.append(snapshot)
             if len(history_log) > MAX_HISTORY:
                 history_log[:] = history_log[-MAX_HISTORY:]
+                
+        # --- Recording Logic ---
+        r_state = recording_states[room_index]
+        if r_state["is_recording"]:
+            if r_state["writer"] is None:
+                h, w = frame.shape[:2]
+                os.makedirs("data/records", exist_ok=True)
+                filename = f"data/records/room{room_index}_{int(time.time())}.mp4"
+                fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+                r_state["writer"] = cv2.VideoWriter(filename, fourcc, 30.0, (w, h))
+                print(f"[RECORDING] Started for room {room_index}: {filename}")
+                
+            r_state["writer"].write(annotated)
+            # Add recording indicator UI to frame
+            cv2.circle(annotated, (w-30, 30), 10, (0, 0, 255), -1)
+            cv2.putText(annotated, "REC", (w-80, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
             
-        # ~30 FPS display rate (inference is throttled separately via INFERENCE_INTERVAL)
+            if person_count == 0:
+                if r_state["empty_timer"] is None:
+                    r_state["empty_timer"] = time.time()
+                elif time.time() - r_state["empty_timer"] >= 5.0:
+                    r_state["writer"].release()
+                    r_state["writer"] = None
+                    r_state["is_recording"] = False
+                    r_state["empty_timer"] = None
+                    print(f"[RECORDING] Stopped automatically for room {room_index} (empty for 5s)")
+            else:
+                r_state["empty_timer"] = None
+            
+        # ~30 FPS display rate
         time.sleep(0.03)
 
 
@@ -237,8 +274,11 @@ def vision_processing_loop():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Runs when application starts
-    vision_thread = threading.Thread(target=vision_processing_loop, daemon=True)
-    vision_thread.start()
+    # Live Webcam
+    threading.Thread(target=vision_processing_loop, args=(0, 0), daemon=True).start()
+    # Mock offline videos
+    threading.Thread(target=vision_processing_loop, args=(1, "data/room102/room102.mp4"), daemon=True).start()
+    threading.Thread(target=vision_processing_loop, args=(2, "data/room103/room103.mp4"), daemon=True).start()
     yield
     # Runs when application shutdowns
     print("Shutting down API...")
@@ -327,15 +367,31 @@ def get_history_csv():
         headers={"Content-Disposition": "attachment; filename=wattwatch_history.csv"}
     )
 
-@app.get("/api/video_feed")
-def video_feed():
+@app.get("/api/video_feed/{room_index}")
+def video_feed(room_index: int):
     def generate():
         while True:
-            if global_frame is not None:
-                ret, buffer = cv2.imencode('.jpg', global_frame)
+            frame = global_frames.get(room_index)
+            if frame is not None:
+                ret, buffer = cv2.imencode('.jpg', frame)
                 if ret:
                     frame_bytes = buffer.tobytes()
                     yield (b'--frame\r\n'
                            b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
             time.sleep(0.05)
     return StreamingResponse(generate(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+@app.post("/api/record_video/{room_index}")
+def api_record_video(room_index: int):
+    if room_index in recording_states:
+        recording_states[room_index]["is_recording"] = True
+        # Reset the empty timer if it was set
+        recording_states[room_index]["empty_timer"] = None
+        return {"status": "success", "message": f"Recording started for room {room_index}"}
+    return {"status": "error", "message": "Invalid room index"}, 400
+
+@app.get("/api/recording_status/{room_index}")
+def get_recording_status(room_index: int):
+    if room_index in recording_states:
+        return {"is_recording": recording_states[room_index]["is_recording"]}
+    return {"error": "Invalid room index"}, 400
