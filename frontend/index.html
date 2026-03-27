@@ -28,6 +28,9 @@
     <!-- Framer Motion -->
     <script src="https://unpkg.com/framer-motion@10.16.4/dist/framer-motion.js"></script>
 
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
     <script id="tailwind-config">
         tailwind.config = {
             darkMode: "class",
@@ -242,6 +245,12 @@
             const containerRef = useRef(null);
             const { x, y } = useMousePosition();
 
+            // Chart.js references
+            const lineChartRef = useRef(null);
+            const barChartRef = useRef(null);
+            const doughnutChartRef = useRef(null);
+            const chartInstances = useRef({ line: null, bar: null, doughnut: null });
+
             // Backend API State
             const [roomData, setRoomData] = useState([]);
             const [totalSaved, setTotalSaved] = useState(0);
@@ -287,6 +296,126 @@
             };
 
             const liveRoom = roomData.length > 0 ? roomData[0] : { person_count: 0, appliance_state: "OFF", alert: false };
+
+            // Chart Rendering Logic
+            useEffect(() => {
+                if (activeTab !== 'Analytics' || historyData.length === 0 || showPreview) return;
+
+                const destroyCharts = () => {
+                    if (chartInstances.current.line) { chartInstances.current.line.destroy(); chartInstances.current.line = null; }
+                    if (chartInstances.current.bar) { chartInstances.current.bar.destroy(); chartInstances.current.bar = null; }
+                    if (chartInstances.current.doughnut) { chartInstances.current.doughnut.destroy(); chartInstances.current.doughnut = null; }
+                };
+
+                destroyCharts();
+
+                // Sort chronological for charts
+                const sortedData = [...historyData].sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+                let cumulative = 0;
+                const labels = [];
+                const energyData = [];
+                const rooms = {};
+                let normal = 0, emptyOn = 0, allOff = 0;
+
+                sortedData.forEach(d => {
+                    // Line Chart Data
+                    labels.push(d.timestamp.split(' ')[1] || d.timestamp);
+                    cumulative += d.energy_saved_kwh || 0;
+                    energyData.push(cumulative.toFixed(3));
+
+                    // Bar Chart Data
+                    if (!rooms[d.room]) rooms[d.room] = 0;
+                    if (d.alert) rooms[d.room]++;
+
+                    // Doughnut Data
+                    if (d.alert) emptyOn++;
+                    else if (d.appliance_state === "OFF") allOff++;
+                    else normal++;
+                });
+
+                Chart.defaults.color = 'rgba(255, 255, 255, 0.6)';
+                Chart.defaults.font.family = 'Inter';
+
+                if (lineChartRef.current) {
+                    chartInstances.current.line = new Chart(lineChartRef.current, {
+                        type: 'line',
+                        data: {
+                            labels: labels,
+                            datasets: [{
+                                label: 'Cumulative kWh Saved',
+                                data: energyData,
+                                borderColor: '#00E5FF',
+                                backgroundColor: 'rgba(0, 229, 255, 0.1)',
+                                borderWidth: 2,
+                                pointRadius: 0,
+                                fill: true,
+                                tension: 0.4
+                            }]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: {
+                                legend: { display: false },
+                                title: { display: true, text: 'Energy Recovery Trend', color: '#00E5FF', font: { family: 'Space Grotesk', size: 14 } }
+                            },
+                            scales: {
+                                x: { ticks: { maxTicksLimit: 10 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                                y: { grid: { color: 'rgba(0,229,255,0.1)' } }
+                            }
+                        }
+                    });
+                }
+
+                if (barChartRef.current) {
+                    chartInstances.current.bar = new Chart(barChartRef.current, {
+                        type: 'bar',
+                        data: {
+                            labels: Object.keys(rooms),
+                            datasets: [{
+                                label: 'Phantom Loads Detected',
+                                data: Object.values(rooms),
+                                backgroundColor: '#F43F5E',
+                                borderRadius: 4,
+                            }]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: { legend: { display: false }, title: { display: true, text: 'Phantom Loads by Sector', color: '#F43F5E', font: { family: 'Space Grotesk', size: 14 } } },
+                            scales: {
+                                x: { grid: { display: false } },
+                                y: { ticks: { stepSize: 1 }, grid: { color: 'rgba(244,63,94,0.1)' } }
+                            }
+                        }
+                    });
+                }
+
+                if (doughnutChartRef.current) {
+                    chartInstances.current.doughnut = new Chart(doughnutChartRef.current, {
+                        type: 'doughnut',
+                        data: {
+                            labels: ['Secure (Occupied)', 'Alert (Phantom Load)', 'Standby (All Off)'],
+                            datasets: [{
+                                data: [normal, emptyOn, allOff],
+                                backgroundColor: ['#00E5FF', '#F43F5E', '#1A3A69'],
+                                borderColor: '#061A3A',
+                                borderWidth: 2,
+                                hoverOffset: 4
+                            }]
+                        },
+                        options: {
+                            responsive: true, maintainAspectRatio: false,
+                            plugins: {
+                                legend: { position: 'bottom', labels: { color: 'rgba(255,255,255,0.7)', font: { size: 10 } } },
+                                title: { display: true, text: 'Grid Status Breakdown', color: '#E2E8F0', font: { family: 'Space Grotesk', size: 14 } }
+                            },
+                            cutout: '70%'
+                        }
+                    });
+                }
+
+                return destroyCharts;
+            }, [activeTab, historyData, showPreview]);
 
             // Scroll Animation Hooks for Earth -> Drone City Transition
             // Total height 400vh gives enough scrolling room for the intro.
@@ -622,25 +751,20 @@
                                             )}
                                             </AnimatePresence>
 
-                                            {/* Summary Cards Below */}
+                                            {/* Data Visualization Dashboard */}
                                             {!showPreview && (
-                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4">
-                                                    <motion.div initial={{opacity:0,x:-30}} animate={{opacity:1,x:0}} transition={{delay:0.3}} className="hover-target glass-panel p-8 border-l-4 border-l-secondary/50 shadow-[0_0_30px_rgba(139,92,246,0.1)] transition-transform hover:translate-x-2 duration-300">
-                                                        <div className="flex items-center justify-between mb-4">
-                                                            <p className="text-[10px] font-label text-secondary/70 uppercase tracking-widest">Phantom Load Events Today</p>
-                                                            <span className="material-symbols-outlined text-2xl text-secondary/50">electric_bolt</span>
-                                                        </div>
-                                                        <p className="text-5xl font-headline text-secondary font-bold">{historyData.filter(r => r.alert).length}</p>
-                                                        <p className="text-[10px] font-label text-primary/60 mt-4">Rooms caught with devices on while empty</p>
+                                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
+                                                    <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{delay:0.3}} className="hover-target glass-panel p-4 h-[320px] border-t-2 border-primary shadow-[0_0_20px_rgba(0,229,255,0.1)] col-span-1 lg:col-span-2 relative">
+                                                        <canvas ref={lineChartRef}></canvas>
                                                     </motion.div>
-                                                    <motion.div initial={{opacity:0,x:30}} animate={{opacity:1,x:0}} transition={{delay:0.4}} className="hover-target glass-panel p-8 border-l-4 border-l-primary/50 shadow-[0_0_30px_rgba(0,229,255,0.1)] transition-transform hover:translate-x-2 duration-300">
-                                                        <div className="flex items-center justify-between mb-4">
-                                                            <p className="text-[10px] font-label text-primary/70 uppercase tracking-widest">Data Points Collected</p>
-                                                            <span className="material-symbols-outlined text-2xl text-primary/50">database</span>
-                                                        </div>
-                                                        <p className="text-5xl font-headline text-primary font-bold text-glow">{historyData.length}</p>
-                                                        <p className="text-[10px] font-label text-primary/60 mt-4">Click "Preview Data" to inspect all records</p>
-                                                    </motion.div>
+                                                    <div className="flex flex-col gap-6 col-span-1 border-t-2 border-outline/50 pl-0 lg:pl-4">
+                                                        <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{delay:0.4}} className="hover-target glass-panel p-4 h-[220px] shadow-[0_0_20px_rgba(244,63,94,0.1)] border-b-2 border-error/50">
+                                                            <canvas ref={barChartRef}></canvas>
+                                                        </motion.div>
+                                                        <motion.div initial={{opacity:0,y:20}} animate={{opacity:1,y:0}} transition={{delay:0.5}} className="hover-target glass-panel p-4 flex-1 min-h-[220px] shadow-[0_0_20px_rgba(0,229,255,0.05)] border-b-2 border-secondary/50">
+                                                            <canvas ref={doughnutChartRef}></canvas>
+                                                        </motion.div>
+                                                    </div>
                                                 </div>
                                             )}
                                         </motion.div>

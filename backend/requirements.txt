@@ -6,3 +6,5 @@ python-dotenv
 pydantic
 requests
 scikit-image
+pymongo
+dnspython

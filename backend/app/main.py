@@ -10,6 +10,7 @@ import os
 import io
 import csv
 from datetime import datetime
+from pymongo import MongoClient
 from app.cv_model.detector import OccupancyDetector, ApplianceDetector
 from app.utils.privacy import apply_ghost_mode
 
@@ -20,6 +21,17 @@ global_frame = None
 camera_status = {"connected": False, "message": "Initializing..."}
 history_log = []  # Stores timestamped snapshots of room state
 MAX_HISTORY = 500  # Keep last 500 entries
+
+# --- MONGODB INIT ---
+MONGO_URI = "mongodb+srv://jishnuroy200316_db_user:Frost123@cluster0.unhvyy8.mongodb.net/?appName=Cluster0"
+try:
+    mongo_client = MongoClient(MONGO_URI)
+    db = mongo_client["wattwatch"]
+    history_collection = db["history_logs"]
+    print("[INIT] Connected to MongoDB Atlas")
+except Exception as e:
+    print(f"[ERROR] Failed to connect to MongoDB: {e}")
+    history_collection = None
 
 ROOMS_STATE = [
     {
@@ -207,6 +219,12 @@ def vision_processing_loop():
                 "brightness": round(float(cached_brightness), 1),
                 "motion_level": int(cached_motion)
             }
+            if history_collection is not None:
+                try:
+                    history_collection.insert_one(snapshot.copy())
+                except Exception as e:
+                    print(f"[ERROR] Failed to insert snapshot into DB: {e}")
+
             history_log.append(snapshot)
             if len(history_log) > MAX_HISTORY:
                 history_log[:] = history_log[-MAX_HISTORY:]
@@ -264,6 +282,16 @@ def get_history():
     Returns historical KPI data for the analytics dashboard.
     If no live data yet, returns mock seed data for demo purposes.
     """
+    if history_collection is not None:
+        try:
+            # Get the last 100 entries from DB
+            cursor = history_collection.find({}, {"_id": 0}).sort("timestamp", -1).limit(100)
+            db_history = list(cursor)[::-1]  # reverse to chronological order
+            if len(db_history) > 0:
+                return {"history": db_history}
+        except Exception as e:
+            print(f"[ERROR] Failed to fetch history from DB: {e}")
+
     if len(history_log) < 5:
         # Provide seed data for demo
         seed_data = [
