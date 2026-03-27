@@ -7,7 +7,7 @@ This system utilizes computer vision (YOLOv8 & OpenCV) to detect human occupancy
 
 ## Project Structure
 - `backend/`: FastAPI application containing the YOLOv8 CV module, privacy utilities, and endpoints.
-- `frontend/`: Streamlit dashboard displaying room status and energy savings.
+- `frontend/`: Dashboard displaying room status and energy savings.
 - `data/`: Placeholders for mock data or video feeds.
 - `notebooks/`: Jupyter notebooks for CV experimentation.
 
@@ -24,5 +24,5 @@ uvicorn app.main:app --reload
 ```bash
 cd frontend
 pip install -r requirements.txt
-streamlit run app.py
+run app.py
 ```
